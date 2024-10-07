@@ -1,0 +1,87 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
+from sklearn.inspection import plot_partial_dependence
+
+# Load the dataset
+file_path = '/mnt/data/bank-additional-full.csv'
+data = pd.read_csv(file_path, delimiter=';')
+
+# Identify categorical columns
+categorical_cols = ['job', 'marital', 'education', 'default', 'housing', 'loan', 
+                    'contact', 'month', 'day_of_week', 'poutcome']
+
+# Apply Label Encoding to binary categorical variables ('default', 'housing', 'loan', 'y')
+label_encoders = {}
+for col in ['default', 'housing', 'loan', 'y']:
+    le = LabelEncoder()
+    data[col] = le.fit_transform(data[col])
+    label_encoders[col] = le
+
+# Apply One-Hot Encoding to other categorical variables
+ct = ColumnTransformer(transformers=[
+    ('onehot', OneHotEncoder(drop='first'), categorical_cols)], 
+    remainder='passthrough')
+
+# Transform the dataset
+data_transformed = ct.fit_transform(data)
+
+# Convert the transformed data back to a DataFrame for easier analysis
+feature_names = ct.get_feature_names_out()
+transformed_df = pd.DataFrame(data_transformed, columns=feature_names)
+
+# Separate features (X) and target (y)
+X = transformed_df.drop(columns=['remainder__y'])
+y = transformed_df['remainder__y']
+
+# Split the dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# Instantiate and fit the Random Forest model
+rf_model = RandomForestClassifier(random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Evaluate the model's performance using classification report
+y_pred = rf_model.predict(X_test)
+report = classification_report(y_test, y_pred)
+print(report)
+
+# Global analysis using Partial Dependence Plot for the top 3 most important features
+feature_importances = rf_model.feature_importances_
+indices = np.argsort(feature_importances)[::-1]
+top_n = 3
+top_features_for_pdp = [X.columns[i] for i in indices[:top_n]]
+
+# Plotting partial dependence plots for the top features
+fig, ax = plt.subplots(figsize=(12, 8))
+plot_partial_dependence(rf_model, X_train, features=top_features_for_pdp, ax=ax, grid_resolution=20)
+plt.suptitle('Partial Dependence Plots for Top 3 Features', fontsize=16)
+plt.show()
+
+# Analyze feature contributions for observation #4 and #20
+observation_4 = X.iloc[3]
+observation_20 = X.iloc[19]
+
+# Display feature contributions for these observations
+contributions_4 = rf_model.feature_importances_ * observation_4.values
+contributions_20 = rf_model.feature_importances_ * observation_20.values
+
+contributions_df_4 = pd.DataFrame({
+    'Feature': X.columns,
+    'Contribution': contributions_4
+}).sort_values(by='Contribution', ascending=False)
+
+contributions_df_20 = pd.DataFrame({
+    'Feature': X.columns,
+    'Contribution': contributions_20
+}).sort_values(by='Contribution', ascending=False)
+
+# Display feature contributions for observation #4 and #20
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Feature Contributions for Observation #4", dataframe=contributions_df_4)
+tools.display_dataframe_to_user(name="Feature Contributions for Observation #20", dataframe=contributions_df_20)
